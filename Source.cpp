@@ -2,7 +2,141 @@
 #include <assert.h>
 #include <string.h>
 #include <vector>
+#include <Windows.h>
 #include "glut.h"
+
+
+struct TEXRGB {
+
+	char R;
+	char G;
+	char B;
+	char A;
+
+};
+
+
+GLuint textures[1];
+
+TEXRGB* texrgb;
+
+char type[2] = { 0 };
+int size = 0;
+int aa = 0;
+int offset = 0;
+int bb = 0;
+int size1 = 0;
+int size4 = 0;
+
+
+void LoadTexture(const char* FileName)
+{
+	FILE* fp;
+
+	fopen_s(&fp, FileName, "rb");
+
+	char R;
+	char G;
+	char B;
+
+	fread(type, sizeof(char), 2, fp);
+
+	fread(&size, 4, 1, fp);
+
+	fread(&aa, 2, 1, fp);
+
+	fread(&aa, 2, 1, fp);
+
+	fread(&offset, 4, 1, fp);
+
+	fseek(fp, 0, SEEK_SET);
+
+	BITMAPFILEHEADER bf;
+	fread_s(&bf, sizeof(BITMAPFILEHEADER), sizeof(BITMAPFILEHEADER), 1, fp);
+
+	BITMAPINFOHEADER bi;
+	fread_s(&bi, sizeof(BITMAPINFOHEADER), sizeof(BITMAPINFOHEADER), 1, fp);
+
+	fseek(fp, 0, SEEK_SET);
+
+	fseek(fp, offset, SEEK_CUR);
+
+	size1 = (size - offset) / 3;
+
+	texrgb = new TEXRGB[size1];
+
+	for (int i = 0; i<size1; i++)
+	{
+		fread(&B, 1, 1, fp);
+		fread(&G, 1, 1, fp);
+		fread(&R, 1, 1, fp);
+
+		texrgb[i].R = R;
+		texrgb[i].G = G;
+		texrgb[i].B = B;
+
+		texrgb[i].A = 255;
+	}
+
+	for (int y = 0; y < bi.biHeight / 2; ++y) {
+		for (int x = 0; x < bi.biWidth; ++x) {
+
+			TEXRGB temp = { 0, 0, 0, 0 };
+			temp = texrgb[bi.biWidth * y + x];
+			texrgb[bi.biWidth * y + x] = texrgb[bi.biWidth * (bi.biHeight - 1 - y) + x];
+			texrgb[bi.biWidth * (bi.biHeight - 1 - y) + x] = temp;
+
+		}
+
+	}
+
+}
+
+
+void Tex_Init(const char* filename) {
+
+	LoadTexture(filename);
+
+	glGenTextures(
+		1,
+		textures
+		);
+
+	glBindTexture(
+		GL_TEXTURE_2D,
+		textures[0]
+		);
+
+	glTexImage2D(
+		GL_TEXTURE_2D,      // GLenum target
+		0,                  // GLint level
+		GL_RGB,             // GLint internalformat
+		256, 256,               // GLsizei width, height
+		0,                  // GLint border
+		GL_RGBA,             // GLenum format
+		GL_UNSIGNED_BYTE,   // GLenum type
+		texrgb);            // const GLvoid *pixels
+
+
+	glTexParameteri(
+		GL_TEXTURE_2D,
+		GL_TEXTURE_MIN_FILTER,
+		GL_NEAREST
+		);
+
+	glTexParameteri(
+		GL_TEXTURE_2D,
+		GL_TEXTURE_MAG_FILTER,
+		GL_NEAREST
+		);
+
+	delete texrgb;
+
+
+
+}
+
+
 
 struct VECTOR3{
 	float x, y, z;
@@ -31,10 +165,9 @@ struct MATERIAL{
 	VECTOR3 specular;
 	VECTOR3 ambient;
 
-	char* FileName;
+	std::string FileName;
 };
 
-//std::vector<float> vertexArray_s;
 std::vector<VERTEX> vertexArray;
 std::vector<NORMAL> normalArray;
 std::vector<TEXCOORD> texcoordArray;
@@ -158,7 +291,7 @@ void roadModel(){
 
 			unsigned int nTexCoords;
 			fscanf_s(fp, "%u", &nTexCoords, sizeof(nTexCoords));
-			//printf("%u\n", nNormals);
+			//printf("%u\n", nTexCoords);
 			fscanf_s(fp, "%*1s");
 
 			for (int count = 0; count < nTexCoords; ++count){
@@ -166,7 +299,7 @@ void roadModel(){
 
 				for (int i = 0; i < 2; ++i){
 					fscanf_s(fp, "%f", &texcoords[i], sizeof(texcoords[i]));
-					//			printf("%f\n", vertices[i]);
+					//printf("%f\n", texcoords[i]);
 					fscanf_s(fp, "%*1s");
 				};
 				fscanf_s(fp, "%*1s");
@@ -233,7 +366,14 @@ void roadModel(){
 
 				fscanf_s(fp, "%s", buf, sizeof(buf));
 				material.FileName = buf;
-				fscanf_s(fp, "%*1s");
+				std::string str = material.FileName;
+				material.FileName = str.substr(str.find_first_of('\"', 0) + 1, str.find_last_of('\"', 255) - 1);
+
+				//material.FileName[5] = '\0';
+
+				printf("filename : %s\n", material.FileName.c_str());
+
+				//fscanf_s(fp, "%*1s");
 
 			}
 			fscanf_s(fp, "%*1s");
@@ -245,6 +385,8 @@ void roadModel(){
 
 	}
 
+	//LoadTexture(materialArray[0].FileName.c_str());
+	Tex_Init(materialArray[0].FileName.c_str());
 
 	fclose(fp);
 
@@ -282,11 +424,22 @@ void display(void){
 	glRotatef(a, 0, 1, 0);
 	glColor3f(1, 1, 0);
 
+	glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+	glEnable(GL_TEXTURE_2D);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, (const GLfloat *)&materialArray[0].ambient);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, (const GLfloat *)&materialArray[0].diffuse);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, (const GLfloat *)&materialArray[0].specular);
+	glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, materialArray[0].shininess);
+
+	glBindTexture(
+		GL_TEXTURE_2D,
+		textures[0]
+		);
+
 	glEnableClientState(GL_VERTEX_ARRAY);
 	glEnableClientState(GL_NORMAL_ARRAY);
-	glEnableClientState(GL_TEXTURE_COORD_ARRAY);
 
-	glColor3f(1, 0, 0);
+	
 		glVertexPointer(
 			3,
 			GL_FLOAT,
@@ -313,6 +466,8 @@ void display(void){
 	glDisableClientState(GL_VERTEX_ARRAY);
 	glDisableClientState(GL_NORMAL_ARRAY);
 	glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+	glDisable(GL_TEXTURE_2D);
+
 	glPopMatrix();
 
 	glFlush();
